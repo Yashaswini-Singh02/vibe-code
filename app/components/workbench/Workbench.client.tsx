@@ -9,11 +9,11 @@ import {
 } from '~/components/editor/codemirror/CodeMirrorEditor';
 import { IconButton } from '~/components/ui/IconButton';
 import { PanelHeaderButton } from '~/components/ui/PanelHeaderButton';
-import { Slider, type SliderOptions } from '~/components/ui/Slider';
 import { workbenchStore, type WorkbenchViewType } from '~/lib/stores/workbench';
 import { classNames } from '~/utils/classNames';
 import { cubicEasingFn } from '~/utils/easings';
 import { renderLogger } from '~/utils/logger';
+import { ContractPanel } from './ContractPanel';
 import { EditorPanel } from './EditorPanel';
 import { Preview } from './Preview';
 
@@ -23,17 +23,6 @@ interface WorkspaceProps {
 }
 
 const viewTransition = { ease: cubicEasingFn };
-
-const sliderOptions: SliderOptions<WorkbenchViewType> = {
-  left: {
-    value: 'code',
-    text: 'Code',
-  },
-  right: {
-    value: 'preview',
-    text: 'Preview',
-  },
-};
 
 const workbenchVariants = {
   closed: {
@@ -51,6 +40,28 @@ const workbenchVariants = {
     },
   },
 } satisfies Variants;
+
+interface ViewTabProps {
+  isActive: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}
+
+const ViewTab = memo(({ isActive, onClick, children }: ViewTabProps) => {
+  return (
+    <button
+      onClick={onClick}
+      className={classNames(
+        'px-3 py-1 text-sm font-medium rounded-md transition-colors relative',
+        isActive
+          ? 'text-bolt-elements-item-contentAccent bg-bolt-elements-item-backgroundAccent'
+          : 'text-bolt-elements-item-content hover:text-bolt-elements-item-contentActive hover:bg-bolt-elements-item-backgroundDefault',
+      )}
+    >
+      {children}
+    </button>
+  );
+});
 
 export const Workbench = memo(({ chatStarted, isStreaming }: WorkspaceProps) => {
   renderLogger.trace('Workbench');
@@ -118,28 +129,42 @@ export const Workbench = memo(({ chatStarted, isStreaming }: WorkspaceProps) => 
         >
           <div className="absolute inset-0 px-6">
             <div className="h-full flex flex-col bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor shadow-sm rounded-lg overflow-hidden">
-              <div className="flex items-center px-3 py-2 border-b border-bolt-elements-borderColor">
-                <Slider selected={selectedView} options={sliderOptions} setSelected={setSelectedView} />
-                <div className="ml-auto" />
-                {selectedView === 'code' && (
-                  <PanelHeaderButton
-                    className="mr-1 text-sm"
+              <div className="flex items-center justify-between px-3 py-2 border-b border-bolt-elements-borderColor">
+                <div className="flex items-center gap-1">
+                  <ViewTab isActive={selectedView === 'code'} onClick={() => setSelectedView('code')}>
+                    <div className="i-ph:code mr-1.5" />
+                    Code
+                  </ViewTab>
+                  <ViewTab isActive={selectedView === 'contracts'} onClick={() => setSelectedView('contracts')}>
+                    <div className="i-ph:code-block mr-1.5" />
+                    Contracts
+                  </ViewTab>
+                  <ViewTab isActive={selectedView === 'preview'} onClick={() => setSelectedView('preview')}>
+                    <div className="i-ph:monitor mr-1.5" />
+                    Preview
+                  </ViewTab>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  {selectedView === 'code' && (
+                    <PanelHeaderButton
+                      className="text-sm"
+                      onClick={() => {
+                        workbenchStore.toggleTerminal(!workbenchStore.showTerminal.get());
+                      }}
+                    >
+                      <div className="i-ph:terminal mr-1.5" />
+                      Terminal
+                    </PanelHeaderButton>
+                  )}
+                  <IconButton
+                    icon="i-ph:x-circle"
+                    size="xl"
                     onClick={() => {
-                      workbenchStore.toggleTerminal(!workbenchStore.showTerminal.get());
+                      workbenchStore.showWorkbench.set(false);
                     }}
-                  >
-                    <div className="i-ph:terminal" />
-                    Toggle Terminal
-                  </PanelHeaderButton>
-                )}
-                <IconButton
-                  icon="i-ph:x-circle"
-                  className="-mr-1"
-                  size="xl"
-                  onClick={() => {
-                    workbenchStore.showWorkbench.set(false);
-                  }}
-                />
+                  />
+                </div>
               </div>
               <div className="relative flex-1 overflow-hidden">
                 <View
@@ -158,6 +183,12 @@ export const Workbench = memo(({ chatStarted, isStreaming }: WorkspaceProps) => 
                     onFileSave={onFileSave}
                     onFileReset={onFileReset}
                   />
+                </View>
+                <View
+                  initial={{ x: selectedView === 'contracts' ? 0 : selectedView === 'code' ? '100%' : '-100%' }}
+                  animate={{ x: selectedView === 'contracts' ? 0 : selectedView === 'code' ? '100%' : '-100%' }}
+                >
+                  <ContractPanel />
                 </View>
                 <View
                   initial={{ x: selectedView === 'preview' ? 0 : '100%' }}

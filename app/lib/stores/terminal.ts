@@ -37,4 +37,10 @@ export class TerminalStore {
       process.resize({ cols, rows });
     }
   }
+
+  writeToTerminals(data: string) {
+    for (const { terminal } of this.#terminals) {
+      terminal.write(data);
+    }
+  }
 }

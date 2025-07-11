@@ -5,6 +5,7 @@ import type { BoltAction } from '~/types/actions';
 import { createScopedLogger } from '~/utils/logger';
 import { unreachable } from '~/utils/unreachable';
 import type { ActionCallbackData } from './message-parser';
+import type { TerminalStore } from '~/lib/stores/terminal';
 
 const logger = createScopedLogger('ActionRunner');
 
@@ -35,12 +36,14 @@ type ActionsMap = MapStore<Record<string, ActionState>>;
 
 export class ActionRunner {
   #webcontainer: Promise<WebContainer>;
+  #terminalStore: TerminalStore;
   #currentExecutionPromise: Promise<void> = Promise.resolve();
 
   actions: ActionsMap = map({});
 
-  constructor(webcontainerPromise: Promise<WebContainer>) {
+  constructor(webcontainerPromise: Promise<WebContainer>, terminalStore: TerminalStore) {
     this.#webcontainer = webcontainerPromise;
+    this.#terminalStore = terminalStore;
   }
 
   addAction(data: ActionCallbackData) {
@@ -110,6 +113,10 @@ export class ActionRunner {
           await this.#runFileAction(action);
           break;
         }
+        case 'contract': {
+          await this.#runContractAction(action);
+          break;
+        }
       }
 
       this.#updateAction(actionId, { status: action.abortSignal.aborted ? 'aborted' : 'complete' });
@@ -138,8 +145,11 @@ export class ActionRunner {
 
     process.output.pipeTo(
       new WritableStream({
-        write(data) {
+        write: (data) => {
           console.log(data);
+
+          // write the output to all active terminals so users can see it
+          this.#terminalStore.writeToTerminals(data);
         },
       }),
     );
@@ -175,6 +185,99 @@ export class ActionRunner {
       logger.debug(`File written ${action.filePath}`);
     } catch (error) {
       logger.error('Failed to write file\n\n', error);
+    }
+  }
+
+  async #runContractAction(action: ActionState) {
+    if (action.type !== 'contract') {
+      unreachable('Expected contract action');
+    }
+
+    try {
+      // dynamically import the compiler to avoid SSR issues
+      const { smartContractCompiler } = await import('~/lib/smartcontracts/compiler');
+
+      const webcontainer = await this.#webcontainer;
+
+      // read the source file
+      const sourceCode = await webcontainer.fs.readFile(action.filePath, 'utf8');
+
+      // compile the contract
+      const result = await smartContractCompiler.compile(sourceCode, action.language, action.filePath, {
+        optimize: action.optimize,
+      });
+
+      // create output directory
+      const outputDir = action.outputDir || 'contracts/artifacts';
+      const outputPath = nodePath.join(
+        outputDir,
+        nodePath.basename(action.filePath, nodePath.extname(action.filePath)),
+      );
+
+      try {
+        await webcontainer.fs.mkdir(outputDir, { recursive: true });
+      } catch {
+        logger.debug('Output directory already exists or failed to create');
+      }
+
+      if (result.success) {
+        // write compilation artifacts
+        if (result.bytecode) {
+          await webcontainer.fs.writeFile(`${outputPath}.bin`, result.bytecode);
+        }
+
+        if (result.abi) {
+          await webcontainer.fs.writeFile(`${outputPath}.abi.json`, JSON.stringify(result.abi, null, 2));
+        }
+
+        if (result.metadata) {
+          await webcontainer.fs.writeFile(`${outputPath}.metadata.json`, result.metadata);
+        }
+
+        // write compilation report
+        const report = {
+          success: true,
+          fileName: action.filePath,
+          language: action.language,
+          target: action.target,
+          warnings: result.warnings || [],
+          gasEstimates: result.gasEstimates,
+          compiledAt: new Date().toISOString(),
+        };
+
+        await webcontainer.fs.writeFile(`${outputPath}.report.json`, JSON.stringify(report, null, 2));
+
+        logger.info(`Contract compiled successfully: ${action.filePath}`);
+        console.log(`✅ Contract compilation successful!\n📁 Artifacts saved to: ${outputDir}`);
+
+        if (result.warnings && result.warnings.length > 0) {
+          console.log(`⚠️  Warnings:\n${result.warnings.join('\n')}`);
+        }
+      } else {
+        // write error report
+        const errorReport = {
+          success: false,
+          fileName: action.filePath,
+          language: action.language,
+          errors: result.errors || [],
+          warnings: result.warnings || [],
+          compiledAt: new Date().toISOString(),
+        };
+
+        await webcontainer.fs.writeFile(`${outputPath}.error.json`, JSON.stringify(errorReport, null, 2));
+
+        logger.error(`Contract compilation failed: ${action.filePath}`);
+        console.error(`❌ Contract compilation failed!\n${result.errors?.join('\n') || 'Unknown error'}`);
+
+        if (result.warnings && result.warnings.length > 0) {
+          console.log(`⚠️  Warnings:\n${result.warnings.join('\n')}`);
+        }
+
+        throw new Error('Compilation failed');
+      }
+    } catch (error) {
+      logger.error('Contract action failed:', error);
+      throw error;
     }
   }
 

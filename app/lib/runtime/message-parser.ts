@@ -256,6 +256,27 @@ export class StreamingMessageParser {
       }
 
       (actionAttributes as FileAction).filePath = filePath;
+    } else if (actionType === 'contract') {
+      const filePath = this.#extractAttribute(actionTag, 'filePath') as string;
+      const language = this.#extractAttribute(actionTag, 'language') as 'solidity' | 'rust' | 'javascript';
+      const target = this.#extractAttribute(actionTag, 'target') as 'ethereum' | 'polygon' | 'bsc' | 'solana' | 'near';
+      const optimize = this.#extractAttribute(actionTag, 'optimize') === 'true';
+      const outputDir = this.#extractAttribute(actionTag, 'outputDir') as string;
+
+      if (!filePath) {
+        logger.debug('Contract file path not specified');
+      }
+
+      if (!language) {
+        logger.debug('Contract language not specified');
+      }
+
+      const contractAction = actionAttributes as any;
+      contractAction.filePath = filePath;
+      contractAction.language = language || 'solidity';
+      contractAction.target = target;
+      contractAction.optimize = optimize;
+      contractAction.outputDir = outputDir;
     } else if (actionType !== 'shell') {
       logger.warn(`Unknown action type '${actionType}'`);
     }

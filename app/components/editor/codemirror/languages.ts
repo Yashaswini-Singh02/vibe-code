@@ -92,6 +92,22 @@ export const supportedLanguages = [
       return import('@codemirror/lang-cpp').then((module) => module.cpp());
     },
   }),
+  LanguageDescription.of({
+    name: 'Solidity',
+    extensions: ['sol'],
+    async load() {
+      // use JavaScript highlighting as fallback for Solidity until we add proper support
+      return import('@codemirror/lang-javascript').then((module) => module.javascript());
+    },
+  }),
+  LanguageDescription.of({
+    name: 'Rust',
+    extensions: ['rs'],
+    async load() {
+      // use C++ highlighting as fallback for Rust
+      return import('@codemirror/lang-cpp').then((module) => module.cpp());
+    },
+  }),
 ];
 
 export async function getLanguage(fileName: string) {
